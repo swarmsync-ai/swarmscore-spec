@@ -1,0 +1,1816 @@
+Internet-Draft                                               Stone et al.
+Intended status: Standards Track                             March 2026
+Expires: September 2026
+
+
+         SwarmScore V1: Volume-Scaled Agent Reputation Protocol
+                    draft-stone-swarmscore-v1-01
+
+Abstract
+
+   SwarmScore V1 is a transparent, community-governed open standard for
+   agent reputation scoring in open marketplaces. It provides a two-
+   dimensional scoring system that measures agent performance across
+   technical execution (via Conduit browser verification) and commercial
+   reliability (via AP2 payment protocol). SwarmScore uses volume-scaled
+   metrics to reward consistent, high-volume performance while filtering
+   out single-transaction luck. The protocol produces cryptographically
+   signed, self-verifiable certificates that marketplaces can use to
+   filter, rank, and price agent services.
+
+   This document defines the V1 comprehensive specification: formula,
+   trust tiers, escrow integration, wire format, governance model, legal
+   framework, implementation guidance, V2 roadmap, competitive analysis,
+   and known limitations. It is designed for immediate implementation in
+   production agent marketplaces and serves as the foundation for V2
+   extensions (multi-pillar scoring, safety testing).
+
+   AUTHORITY = FORMULA x GOVERNANCE. A deterministic formula without
+   transparent governance is a private algorithm. SwarmScore V1 provides
+   both.
+
+Status of This Memo
+
+   This Internet-Draft is submitted in full conformance with the
+   provisions of BCP 78 and BCP 79.
+
+   Internet-Drafts are working documents of the Internet Engineering
+   Task Force (IETF). Note that other groups may also distribute
+   working documents as Internet-Drafts. The list of current Internet-
+   Drafts is at https://datatracker.ietf.org/drafts/current/.
+
+   Internet-Drafts have a limited lifetime. Expiration will eventually
+   force the use of more recent versions. Expires in 6 months.
+
+   This specification is made available under a dual Apache 2.0 / MIT
+   license. Implementers may choose either license.
+
+Copyright Notice
+
+   Copyright (c) 2026 SwarmSync Labs. All rights reserved.
+
+---
+
+Table of Contents
+
+   1.  Introduction
+   2.  Terminology
+   3.  SwarmScore V1 Formula
+   4.  Trust Tiers
+   5.  Escrow Integration
+   6.  Wire Format Specification
+   7.  Verification Protocol
+   8.  Security Considerations
+   9.  References
+   10. Governance Model
+   11. Legal and Liability Framework
+   12. Implementation Guide
+   13. V2 Roadmap and Extensions
+   14. Competitive Analysis
+   15. Known Limitations and Failure Modes
+   Appendix A.  Test Vectors (10 Reference Agents)
+   Appendix B.  Escrow Modifier Reference Curves
+   Appendix C.  Reference Implementation Guide
+   Appendix D.  Advisory Board Charter
+
+---
+
+1. Introduction
+
+   AI agents in marketplace environments face a critical trust problem:
+   how can buyers confidently transact with agents they have never
+   interacted with? Traditional reputation systems (star ratings, review
+   text) are slow to accumulate and vulnerable to manipulation.
+
+   SwarmScore V1 solves this by providing a quantitative, real-time
+   reputation score computed from two dimensions of agent behavior:
+
+   - Technical Execution (Conduit): The agent's ability to reliably
+     execute browser automation tasks. Measured via Conduit protocol
+     sessions (https://swarmsync.ai/conduit).
+
+   - Commercial Reliability (AP2): The agent's ability to honor
+     agreements and deliver on payment-protocol obligations. Measured
+     via AP2 escrow transactions (https://swarmsync.ai/ap2).
+
+   Both dimensions are volume-scaled: an agent with 1 successful
+   Conduit session and 100% success rate gets a lower score than an
+   agent with 80 successful sessions and 95% success rate. This
+   prevents luck from inflating reputation.
+
+   The score is computed deterministically, signed cryptographically,
+   and published as a self-verifiable certificate. Buyers and
+   marketplaces can check the signature without contacting SwarmScore
+   servers, enabling decentralized trust.
+
+   SwarmScore V1 is designed to be simple, auditable, and immediately
+   deployable. V2 adds a Safety dimension (canary testing) and a
+   multi-pillar framework; V1 provides the foundation.
+
+1.1. Motivation
+
+   Existing agent reputation systems fall into two categories:
+
+   - Implicit (platform-internal): GitHub stars, Hugging Face
+     downloads, OpenAI API usage. Fast, but opaque and non-portable.
+
+   - Explicit (review-based): User ratings on Upwork, Fiverr, Kaggle
+     Competitions. Transparent, but slow to accumulate and game-
+     vulnerable.
+
+   SwarmScore V1 bridges these by providing explicit, cryptographically
+   verifiable, real-time scores that:
+
+   - Are computed from objective transaction data (not subjective
+     reviews).
+   - Can be computed independently (no platform required).
+   - Update continuously (new transaction = new score).
+   - Are portable (scores follow agents across marketplaces).
+
+1.2. Design Principles
+
+   DETERMINISTIC: Same input always produces same score; no randomness
+   or human judgment.
+
+   AUDITABLE: Formula is public; any marketplace can verify scores
+   locally.
+
+   VOLUME-COMPENSATED: Success rate alone does not inflate score; high
+   volume + high rate = high score.
+
+   CONTINUOUS: Score updates in real-time as new transactions complete.
+
+   PORTABLE: Scores are not platform-specific; they follow the agent.
+
+   CRYPTOGRAPHICALLY SIGNED: Third-party verification possible without
+   trust in the issuer.
+
+   GOVERNED: Clear process for updates, disputes, and evolution. The
+   Advisory Board (Section 10) manages these processes publicly.
+
+1.3. Authority Claim
+
+   SwarmScore V1 claims to be the universal open standard for agent
+   reputation scoring. This claim rests on four pillars, not one:
+
+   (1) Deterministic formula (Section 3)
+   (2) Portable certification (Section 6)
+   (3) Economic incentive alignment (Section 5)
+   (4) Transparent governance (Section 10)
+
+   A scoring system with pillars (1)-(3) only is a private algorithm.
+   Adding pillar (4) makes it a community standard. This document
+   provides all four.
+
+2. Terminology
+
+   Agent: An AI service provider in the marketplace (may be a model,
+   an agentic system, or a human-in-the-loop).
+
+   Conduit Session: A browser automation task executed by an agent
+   and verified via Conduit protocol.
+
+   AP2 Transaction: A payment-protocol transaction between a buyer
+   agent and a provider agent.
+
+   Escrow: Money held in trust during AP2 transaction.
+
+   Success Rate: Fraction of completed transactions that met buyer's
+   stated criteria (deflection, partial, or full compliance as defined
+   per transaction).
+
+   Volume Factor: Scaling multiplier based on transaction count;
+   increases from 0 to 1 as volume increases.
+
+   SwarmScore: The composite reputation score (0-1000 scale).
+
+   Trust Tier: A label (NONE, STANDARD, ELITE) derived from score and
+   volume thresholds.
+
+   Escrow Modifier: A fractional cost (0.25-1.0) applied to escrow
+   holds; based on SwarmScore.
+
+   Execution Passport: The signed certificate containing SwarmScore
+   and associated metadata.
+
+   Advisory Board: The 5-7 member governance body that oversees this
+   specification (Section 10).
+
+   Normative/Informative: Sections marked [NORMATIVE] define protocol
+   requirements. Sections marked [INFORMATIVE] provide guidance only.
+
+3. SwarmScore V1 Formula
+
+   [NORMATIVE]
+
+3.1. Inputs
+
+   For a given agent, gather metrics over the last 90 days:
+
+   - conduit_sessions_90d: Total number of Conduit sessions completed.
+   - conduit_successful_90d: Number of Conduit sessions marked VERIFIED
+     (passed all verification checks).
+   - ap2_sessions_90d: Total number of AP2 transactions completed (as
+     provider).
+   - ap2_successful_90d: Number of AP2 transactions settled successfully
+     (not disputed, not refunded).
+
+3.2. Computed Rates
+
+   conduit_rate = conduit_successful_90d / conduit_sessions_90d
+                  (if conduit_sessions_90d == 0, conduit_rate = 0)
+
+   ap2_rate = ap2_successful_90d / ap2_sessions_90d
+              (if ap2_sessions_90d == 0, ap2_rate = 0)
+
+3.3. Volume Factors
+
+   conduit_volume_factor = min(1.0, conduit_sessions_90d / 100)
+
+   ap2_volume_factor = min(1.0, ap2_sessions_90d / 50)
+
+   Rationale: Conduit sessions are lower-stakes (typically <$1 each);
+   100 sessions represents meaningful volume. AP2 transactions are
+   higher-stakes (typically >$1k); 50 transactions represents
+   meaningful volume. At 100 and 50 respectively, volume factor = 1.0
+   and no further scaling occurs.
+
+3.4. Contributions
+
+   conduit_contribution = floor(conduit_rate * conduit_volume_factor
+                                * 400)
+
+   ap2_contribution = floor(ap2_rate * ap2_volume_factor * 600)
+
+   Rationale: Maximum contributions are 400 (Conduit) + 600 (AP2) =
+   1000 total. AP2 is weighted heavier (600 vs 400) because escrow-
+   backed transactions represent higher trust and higher stakes.
+
+3.5. Composite Score
+
+   raw_score = conduit_contribution + ap2_contribution
+
+   swarmscore = max(0, min(1000, raw_score))
+
+   The score is clamped to [0, 1000].
+
+3.6. Escrow Modifier
+
+   The escrow modifier is a continuous curve applied to escrow hold
+   amounts during AP2 transactions. Lower scores = higher holds
+   (buyer protection); higher scores = lower holds (agent efficiency).
+
+   raw_modifier = 1.0 - (swarmscore / 1250)
+
+   escrow_modifier = max(0.25, min(1.0, raw_modifier))
+
+   This produces a continuous curve:
+
+   - swarmscore = 0    -> escrow_modifier = 0.25 (minimum hold: 25%)
+   - swarmscore = 700  -> escrow_modifier ~= 0.44
+   - swarmscore = 1000 -> escrow_modifier = 0.25 (asymptotic floor)
+
+   Interpretation: Even high-reputation agents hold a minimum of 25%
+   escrow (to prevent griefing). At 0 score, 100% hold would be
+   prudent, but we cap at 25% to allow bad agents a path to redemption.
+
+   Note: The escrow modifier floor of 0.25 is a V1 constant. V2 may
+   introduce differentiated floors based on Safety pillar score. See
+   Appendix B for full curve tables and Section 13 for V2 changes.
+
+4. Trust Tiers
+
+   [NORMATIVE]
+
+   SwarmScore defines three trust tiers based on score and volume:
+
+4.1. NONE Tier
+
+   Condition:
+     score < 700 OR conduit_sessions_90d < 50 OR ap2_sessions_90d < 25
+
+   Meaning: Unproven, unreliable, or new. Marketplace may display
+   "Unverified" or "New Agent" badge. Subject to additional
+   verification requirements before high-stakes transactions.
+
+4.2. STANDARD Tier
+
+   Condition:
+     score >= 700 AND conduit_sessions_90d >= 50 AND
+     ap2_sessions_90d >= 25
+
+   Meaning: Proven performer. Marketplace may display "Verified" or
+   "Standard" badge. Eligible for standard marketplace features
+   (search/ranking, standard escrow holds, API tier 2).
+
+4.3. ELITE Tier
+
+   Condition:
+     score >= 850 AND conduit_sessions_90d >= 100 AND
+     ap2_sessions_90d >= 50
+
+   Meaning: High-reputation agent. Marketplace may display "Elite"
+   or "Top" badge. Eligible for premium features (featured listings,
+   reduced escrow holds, API tier 3, priority support).
+
+   Note: Tier is re-evaluated continuously. An agent loses ELITE
+   status immediately if score drops below 850; STANDARD status is
+   lost at score < 700.
+
+5. Escrow Integration
+
+   [NORMATIVE]
+
+   When a buyer initiates an AP2 transaction, the marketplace:
+
+   1. Looks up the provider agent's current SwarmScore.
+   2. Computes escrow_modifier (from Section 3.6).
+   3. Applies the modifier: hold_amount = escrow_amount * escrow_modifier.
+   4. Holds the reduced amount in escrow.
+   5. On successful delivery (as verified by buyer), releases the hold
+      (minus platform fee).
+   6. On dispute, follows standard AP2 adjudication (not covered here).
+
+   Example: A $1,000 escrow with a 0.44 modifier results in a $440
+   hold. The remaining $560 is available to the agent immediately
+   (to use for their own expenses during the transaction).
+
+   This design incentivizes reputation: high-score agents have lower
+   friction and faster cash flow.
+
+6. Wire Format Specification
+
+   [NORMATIVE]
+
+6.1. Execution Passport (Certificate)
+
+   The Execution Passport is a JSON document containing the agent's
+   score and metadata, signed with HMAC-SHA256.
+
+   {
+     "swarmscore_version": "1.0",
+     "agent_passport_id": "uuid-v4",
+     "issuer": {
+       "platform": "swarmsync.ai",
+       "computed_at": "2026-03-17T14:30:00Z",
+       "signature": "sha256_hmac_signature_here"
+     },
+     "score": {
+       "value": 759,
+       "tier": "STANDARD",
+       "conduit_contribution": 304,
+       "ap2_contribution": 455
+     },
+     "dimensions": {
+       "technical_execution": {
+         "label": "Conduit Execution",
+         "sessions_90d": 80,
+         "successful_sessions_90d": 76,
+         "success_rate": 0.95,
+         "volume_factor": 0.80,
+         "max_contribution": 400,
+         "actual_contribution": 304
+       },
+       "commercial_reliability": {
+         "label": "AP2 Reliability",
+         "sessions_90d": 40,
+         "successful_sessions_90d": 38,
+         "success_rate": 0.95,
+         "volume_factor": 0.80,
+         "max_contribution": 600,
+         "actual_contribution": 456
+       }
+     },
+     "escrow_modifier": 0.3928,
+     "qualification_gaps": [],
+     "formula_version": "1.0",
+     "expires_at": "2026-03-24T14:30:00Z"
+   }
+
+6.2. Signature Computation
+
+   signature = HMAC-SHA256(
+     key = SWARMSCORE_SIGNING_KEY,
+     message = JSON_CANONICAL_FORM(passport_object_minus_signature)
+   )
+
+   JSON canonical form: sorted keys, no whitespace, UTF-8 encoding.
+   Signature is hex-encoded in the "signature" field.
+
+6.3. Verification
+
+   Any third party can verify the certificate:
+
+   1. Extract the "signature" field.
+   2. Reconstruct the JSON canonical form (sorting keys, removing
+      whitespace).
+   3. Compute: expected_signature = HMAC-SHA256(SIGNING_KEY, message).
+   4. Compare: if expected_signature == signature, certificate is valid.
+
+   Note: The SIGNING_KEY is a marketplace secret. Third-party
+   verification requires the marketplace to provide the key (or a
+   public-key equivalent in V2+).
+
+7. Verification Protocol
+
+   [NORMATIVE]
+
+7.1. Three Levels of Trust
+
+   L1 (Lightweight): Client checks signature against SWARMSCORE_
+   SIGNING_KEY. Confirms certificate has not been tampered.
+
+   L2 (Strong): Client re-computes the score from transaction data
+   (if available locally) and compares to certificate score. Confirms
+   the certificate's score is correct.
+
+   L3 (Full Audit): Third-party auditor (e.g., buyer's security team)
+   contacts SwarmScore to request transaction logs, verifies the 90-day
+   metrics, re-computes the score, and compares. Confirms no tampering
+   at the source.
+
+   Typical marketplaces perform L1 (lightweight). High-stakes
+   transactions may require L2 or L3.
+
+7.2. Certificate Endpoint (Optional)
+
+   Marketplaces may expose: GET /swarmscore/{agent_id}/certificate
+
+   Returns the current Execution Passport for the agent. Includes
+   timestamp (computed_at) and expiration (expires_at). Certificates
+   are valid for 7 days; expired certificates may be re-issued.
+
+7.3. Verification Endpoint (Optional)
+
+   Marketplaces may expose: POST /swarmscore/verify
+
+   Body:
+   {
+     "certificate": { ... full Execution Passport JSON ... },
+     "agent_id": "agent-uuid"
+   }
+
+   Response:
+   {
+     "valid": true,
+     "signature_valid": true,
+     "score_valid": true,
+     "expires_at": "2026-03-24T14:30:00Z",
+     "detected_tampering": false
+   }
+
+8. Security Considerations
+
+   [NORMATIVE]
+
+8.1. Signature Key Management
+
+   The SWARMSCORE_SIGNING_KEY is a shared secret (32+ bytes). It MUST:
+
+   - Be stored securely (environment variable, secure key store).
+   - Rotate annually (issue new key, recompute all certificates).
+   - Not be embedded in client code (only in backend).
+   - Be different between production and staging environments.
+
+   Loss of the signing key allows anyone to forge certificates.
+   Compromise of the key invalidates all signatures.
+
+8.2. Score Computation Data Sources
+
+   SwarmScore relies on transaction data (Conduit sessions, AP2
+   transactions) provided by the marketplace. If this data is corrupted
+   or falsified, scores become meaningless.
+
+   Marketplaces MUST:
+
+   - Audit Conduit session verification (ensure VERIFIED status is
+     correct).
+   - Audit AP2 transaction settlement (ensure successful_90d count is
+     accurate).
+   - Implement write-once transaction logs (prevent retroactive
+     modification).
+
+8.3. Gaming and Manipulation
+
+   Several attacks on SwarmScore are theoretically possible:
+
+   - Volume Farming: An agent completes many low-value transactions to
+     inflate volume. Mitigation: Marketplace monitors for transaction
+     clustering; flags suspiciously similar transactions.
+
+   - Success Rate Gaming: An agent only accepts easy transactions to
+     maintain high success rate. Mitigation: Marketplace tracks
+     rejection rates; flags agents with unusually low rejection rates.
+
+   - Timestamp Manipulation: Agent back-dates transactions to fit the
+     90-day window. Mitigation: Marketplace uses blockchain-style
+     timestamping (hash chains, external notarization).
+
+   These are operator-level attacks (require marketplace complicity or
+   compromise). The protocol itself is sound. See Section 15 for a
+   full treatment of known limitations and attack vectors.
+
+8.4. Privacy Considerations
+
+   SwarmScore certificates contain metrics (session counts, success
+   rates) but not transaction details (who, what, how much). Metrics
+   are aggregated over 90 days, reducing linkability to individual
+   transactions.
+
+   However, agents may prefer to keep their scores private. The
+   certificate format allows for:
+
+   - Signed certificates (portable, provable).
+   - Unlisted certificates (stored server-side, not published).
+
+   Marketplaces should provide agents a choice.
+
+9. References
+
+9.1. Normative References
+
+   [RFC2104]  Krawczyk, H., Bellare, M., Bergman, R., Jain, R., and
+              R. Kohno, "HMAC: Keyed-Hashing for Message
+              Authentication", RFC 2104, DOI 10.17487/RFC2104,
+              February 1997.
+
+   [RFC2026]  Bradner, S., "The Internet Standards Process --
+              Revision 3", BCP 9, RFC 2026, DOI 10.17487/RFC2026,
+              October 1996.
+
+   [RFC8174]  Leiba, B., "Ambiguity of Uppercase vs Lowercase in
+              RFC 2119 Key Words", BCP 14, RFC 8174,
+              DOI 10.17487/RFC8174, May 2017.
+
+   [CONDUIT]  SwarmSync Labs, "Conduit: Cryptographically-Audited
+              Browser Automation Protocol", 2026.
+              https://swarmsync.ai/conduit
+
+   [AP2]      SwarmSync Labs, "Agent Payment Protocol (AP2)", 2026.
+              https://swarmsync.ai/ap2
+
+9.2. Informative References
+
+   [RFC3394]  Schaad, J. and R. Housley, "Advanced Encryption Standard
+              (AES) Key Wrap Algorithm", RFC 3394,
+              DOI 10.17487/RFC3394, September 2002.
+
+   [RFC4648]  Josefsson, S., "The Base16, Base32, and Base64 Data
+              Encodings", RFC 4648, DOI 10.17487/RFC4648,
+              October 2006.
+
+   [RFC6749]  Hardt, D., "The OAuth 2.0 Authorization Framework",
+              RFC 6749, DOI 10.17487/RFC6749, October 2012.
+
+   [RFC7231]  Fielding, R. and J. Reschke, "Hypertext Transfer Protocol
+              (HTTP/1.1): Semantics and Content", RFC 7231,
+              DOI 10.17487/RFC7231, June 2014.
+
+   [RFC8126]  Cotton, M., Leiba, B., and T. Narten, "Guidelines for
+              Writing an IANA Considerations Section in RFCs", BCP 26,
+              RFC 8126, DOI 10.17487/RFC8126, June 2015.
+
+   [ATEP]     SwarmSync Labs, "Agent Trust and Execution Passport
+              (ATEP)", 2026. https://swarmsync.ai/atep
+
+   [CANARY]   Stone et al., "SwarmScore V2 Canary: Safety-Aware Agent
+              Reputation", draft-stone-swarmscore-v2-canary-01, 2026.
+
+---
+
+10. Governance Model
+
+    [INFORMATIVE]
+
+    This section defines the governance process for SwarmScore V1. A
+    scoring protocol without governance is a private algorithm with a
+    public formula. Governance provides the transparency, accountability,
+    and update processes that make SwarmScore a community standard.
+
+10.1. Why Governance Matters
+
+    Consider two protocols with identical formulas:
+
+    Protocol A: Formula is published. Updates made by single company.
+    Protocol B: Formula is published. Updates made via public process.
+
+    Protocol A gives marketplaces no input into formula changes that
+    affect their operations. A company could silently change the formula
+    to favor certain agents. Marketplaces would have no recourse.
+
+    Protocol B gives marketplaces a voice. Formula changes are public,
+    debated, and versioned. Marketplaces can forecast the impact of
+    changes. Disputes have a formal process.
+
+    SwarmScore V1 follows Protocol B.
+
+10.2. Advisory Board Structure
+
+    The SwarmScore Advisory Board consists of 5-7 members:
+
+    - 1 seat: Marketplace CTO (rotating, nominated by marketplace
+      operators annually)
+    - 1 seat: IETF representative (nominated by IETF chair)
+    - 1 seat: W3C AI Agent Protocol Community Group delegate
+    - 1 seat: Independent security researcher (nominated by board,
+      confirmed by public vote)
+    - 1 seat: Agent developer representative (elected by registered
+      agent developers)
+    - 1-2 seats (optional): Domain experts appointed by existing board
+      members (legal, economics, or technical specialists)
+
+    Terms: 1 year, renewable twice (maximum 3 consecutive years).
+
+    Conflicts of interest: Board members must disclose and recuse from
+    decisions directly affecting their employer's marketplace position.
+
+    Compensation: Board members serve as volunteers. Travel expenses
+    for in-person meetings (at most 2 per year) may be reimbursed from
+    the SwarmScore Foundation operating budget.
+
+10.3. Standards Update Process
+
+    Formula changes follow an RFC 2026-style process:
+
+    Stage 1 - PROPOSAL: Any community member may submit a Proposal for
+    Change (PFC) to the public mailing list at standards@swarmsync.ai.
+    A PFC must include: (a) the proposed change, (b) rationale, (c)
+    impact analysis, (d) migration path.
+
+    Stage 2 - REVIEW: The Advisory Board assigns a reviewer within 14
+    days. A public comment period of 30 days opens. All comments are
+    archived at https://swarmsync.ai/governance/proposals/.
+
+    Stage 3 - VOTE: After the comment period, the Advisory Board votes.
+    Simple majority (>=4/7 or >=3/5) required for minor changes.
+    Supermajority (>=6/7 or >=4/5) required for breaking changes
+    (changes that alter score values for existing agents).
+
+    Stage 4 - PUBLICATION: Approved changes are published as a new
+    version of this document. Version numbering: V1.0 -> V1.1 (minor
+    change) -> V2.0 (major/breaking change). V1.x changes MUST be
+    backwards-compatible (they may add new features; they MUST NOT
+    change the formula for V1 data).
+
+    Stage 5 - IMPLEMENTATION: Marketplaces are given 90 days to
+    implement approved changes. During this period, both old and new
+    formula versions MUST be accepted. After 90 days, marketplaces
+    SHOULD upgrade.
+
+10.4. No Hidden Methodology Changes
+
+    The Advisory Board makes the following binding commitments:
+
+    1. No formula changes without public process (Section 10.3).
+    2. No undisclosed Advisory Board conflicts of interest.
+    3. All board meeting notes published within 14 days of meetings.
+    4. All community comments acknowledged within 7 days.
+    5. Vote results published with individual board member positions
+       (no anonymous votes on formula changes).
+
+    These commitments are enforced by the community: any marketplace or
+    agent developer may call for a public audit of compliance with these
+    commitments via the public mailing list.
+
+10.5. Licensing
+
+    This specification is dual-licensed: Apache 2.0 and MIT. Implementers
+    may choose either license. The SwarmScore formula and wire format are
+    free to implement commercially without royalties. The "SwarmScore"
+    trademark may be used by compliant implementations.
+
+    Compliant implementations: An implementation is "SwarmScore
+    Compliant" if it implements Sections 3-8 of this document without
+    modification to the formula parameters. Advisory Board certifies
+    compliance on request.
+
+10.6. Rapid Evolution Process
+
+    If a regulatory change (e.g., SEC, EU AI Act) requires formula
+    modification, the Advisory Board may invoke "Emergency Update
+    Protocol":
+
+    - 7-day public comment period (instead of 30 days)
+    - Board vote by electronic ballot within 3 days of comment close
+    - Published as V1.x.hotfix within 48 hours of vote
+
+    Emergency protocol requires supermajority vote to invoke
+    (6/7 or 4/5 board members).
+
+---
+
+11. Legal and Liability Framework
+
+    [INFORMATIVE]
+
+    This section addresses legal considerations for marketplace
+    operators implementing SwarmScore. It is informative, not normative:
+    operators should consult qualified legal counsel for their specific
+    jurisdiction.
+
+11.1. Agent Consent and Disclosure Requirements
+
+    Operators implementing SwarmScore SHOULD:
+
+    - Disclose to agents that their transaction data (Conduit sessions,
+      AP2 transactions) is used to compute a public reputation score.
+
+    - Obtain explicit consent from agents before their first scored
+      transaction, including: (a) what data is used, (b) how the score
+      is computed, (c) where the score is published, (d) how to appeal.
+
+    - Provide agents access to their own score data and the transaction
+      records underlying it.
+
+    - Honor requests to suppress public display of score (though the
+      score may still be computed and used internally for escrow
+      purposes).
+
+    Sample disclosure language:
+
+      "Your transactions on this marketplace are used to compute a
+      SwarmScore, an open-standard reputation score. The formula is
+      public at [URL]. Your score affects escrow hold amounts and
+      marketplace visibility. You may review your score and the data
+      behind it at any time. Contact us to dispute errors."
+
+11.2. Liability Limitations for Marketplaces
+
+    SwarmScore is a reputational signal, not a guarantee of
+    performance. Marketplaces implementing SwarmScore:
+
+    - Are NOT liable for agent failures where the agent holds a high
+      SwarmScore (the score reflects historical performance, not future
+      guarantees).
+
+    - SHOULD include a liability disclaimer on score display pages and
+      in their terms of service.
+
+    - SHOULD carry Errors & Omissions (E&O) insurance covering claims
+      arising from agent marketplace decisions (including score-based
+      decisions). Recommended minimum: $1M per occurrence.
+
+    Sample liability disclaimer:
+
+      "SwarmScore is a historical performance metric computed from
+      objective transaction data. It does not guarantee future
+      performance. This marketplace is not liable for losses arising
+      from transactions with any agent regardless of SwarmScore."
+
+11.3. Appeals Process
+
+    Any agent who believes their score is computed incorrectly may
+    appeal to the issuing marketplace:
+
+    Grounds for appeal: Data errors only. Valid grounds include:
+    - Incorrect transaction count (e.g., Conduit sessions not counted)
+    - Incorrect success/failure status (e.g., VERIFIED session marked
+      FAILED)
+    - Identity error (sessions attributed to wrong agent ID)
+
+    Invalid grounds for appeal: Score formula disagreement. The formula
+    is the formula; agents cannot appeal that their 85% success rate
+    should be weighted differently.
+
+    Process:
+    1. Agent submits appeal in writing to appeals@[marketplace] within
+       30 days of score computation.
+    2. Marketplace acknowledges within 7 days.
+    3. Marketplace investigates and responds within 21 days.
+    4. If appealing agent disagrees with outcome, they may escalate to
+       the Advisory Board (advisory@swarmsync.ai) for a final, binding
+       decision on data accuracy questions.
+
+    Correction timeline: If a data error is confirmed, the score MUST
+    be recomputed and the corrected Execution Passport re-issued within
+    7 days of confirmation.
+
+11.4. Privacy and Data Regulations
+
+    SwarmScore certificates contain aggregate metrics (session counts,
+    success rates) and NOT transaction-level personal data. However,
+    agent identifiers (agent_passport_id) may constitute personal data
+    under GDPR/CCPA if the agent is a natural person.
+
+    Operators SHOULD:
+
+    - Store SwarmScore computation data in compliance with applicable
+      data retention regulations (typically: retain for 90 days
+      post-score-computation, then aggregate and anonymize).
+
+    - Provide data subject access and deletion requests for agents who
+      are natural persons, consistent with GDPR Article 17 and
+      CCPA Section 1798.105.
+
+    - Document their SwarmScore data processing as a legitimate
+      business interest (reputation scoring for commercial transactions)
+      in their privacy impact assessment.
+
+    The SwarmScore certificate itself (the Execution Passport) contains
+    only aggregate metrics and a hashed identifier; it does not contain
+    transaction-level personal data and may be retained indefinitely.
+
+---
+
+12. Implementation Guide
+
+    [INFORMATIVE]
+
+    This section provides implementation guidance for operators. It is
+    informative, not normative; the formula in Section 3 is normative.
+
+12.1. Database Schema (AP2 / PostgreSQL)
+
+    The following schema supports SwarmScore V1 computation:
+
+    -- Core tables required for SwarmScore computation
+
+    CREATE TABLE conduit_sessions (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      agent_id        UUID NOT NULL REFERENCES agents(id),
+      operator_id     UUID NOT NULL REFERENCES operators(id),
+      started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      completed_at    TIMESTAMPTZ,
+      status          VARCHAR(16) NOT NULL CHECK (
+                        status IN ('PENDING', 'RUNNING', 'VERIFIED',
+                                   'FAILED', 'ERROR', 'TIMEOUT')),
+      action_count    INTEGER DEFAULT 0,
+      session_cost_usd NUMERIC(10,4) DEFAULT 0,
+      proof_hash      VARCHAR(64),  -- SHA-256 of proof bundle
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX idx_conduit_sessions_agent_date
+      ON conduit_sessions (agent_id, completed_at)
+      WHERE status IN ('VERIFIED', 'FAILED');
+
+    CREATE TABLE ap2_transactions (
+      id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      provider_id     UUID NOT NULL REFERENCES agents(id),
+      buyer_id        UUID REFERENCES agents(id),
+      operator_id     UUID NOT NULL REFERENCES operators(id),
+      status          VARCHAR(16) NOT NULL CHECK (
+                        status IN ('NEGOTIATING', 'HELD', 'EXECUTING',
+                                   'DELIVERED', 'SETTLED', 'DISPUTED',
+                                   'REFUNDED', 'CANCELLED')),
+      escrow_amount_usd NUMERIC(12,2) NOT NULL,
+      escrow_modifier NUMERIC(4,4),
+      started_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      settled_at      TIMESTAMPTZ,
+      created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    CREATE INDEX idx_ap2_transactions_provider_date
+      ON ap2_transactions (provider_id, settled_at)
+      WHERE status IN ('SETTLED', 'DISPUTED', 'REFUNDED');
+
+    -- SwarmScore cache table (recomputed every 24 hours or on new
+    -- transaction)
+    CREATE TABLE swarmscore_cache (
+      agent_id            UUID PRIMARY KEY REFERENCES agents(id),
+      score               INTEGER NOT NULL CHECK (score BETWEEN 0 AND 1000),
+      tier                VARCHAR(8) NOT NULL CHECK (
+                            tier IN ('NONE', 'STANDARD', 'ELITE')),
+      conduit_sessions_90d INTEGER NOT NULL DEFAULT 0,
+      conduit_successful_90d INTEGER NOT NULL DEFAULT 0,
+      ap2_sessions_90d     INTEGER NOT NULL DEFAULT 0,
+      ap2_successful_90d   INTEGER NOT NULL DEFAULT 0,
+      conduit_contribution INTEGER NOT NULL DEFAULT 0,
+      ap2_contribution    INTEGER NOT NULL DEFAULT 0,
+      escrow_modifier     NUMERIC(4,4) NOT NULL,
+      computed_at         TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      expires_at          TIMESTAMPTZ NOT NULL
+        DEFAULT NOW() + INTERVAL '7 days',
+      passport_json       JSONB,
+      passport_signature  VARCHAR(64)
+    );
+
+12.2. Score Computation Pseudocode
+
+    The following pseudocode is normative in intent; implementers should
+    match the behavior exactly (see Appendix A for test vectors).
+
+    function compute_swarmscore(agent_id, as_of_date):
+      # 1. Gather 90-day window
+      window_start = as_of_date - 90 days
+      window_end   = as_of_date
+
+      # 2. Count Conduit sessions
+      conduit_total = COUNT(conduit_sessions
+        WHERE agent_id = agent_id
+          AND completed_at BETWEEN window_start AND window_end
+          AND status IN ('VERIFIED', 'FAILED'))
+
+      conduit_success = COUNT(conduit_sessions
+        WHERE agent_id = agent_id
+          AND completed_at BETWEEN window_start AND window_end
+          AND status = 'VERIFIED')
+
+      # 3. Count AP2 transactions
+      ap2_total = COUNT(ap2_transactions
+        WHERE provider_id = agent_id
+          AND settled_at BETWEEN window_start AND window_end
+          AND status IN ('SETTLED', 'DISPUTED', 'REFUNDED'))
+
+      ap2_success = COUNT(ap2_transactions
+        WHERE provider_id = agent_id
+          AND settled_at BETWEEN window_start AND window_end
+          AND status = 'SETTLED')
+
+      # 4. Compute rates (handle zero-division)
+      conduit_rate = conduit_success / conduit_total  if conduit_total > 0 else 0
+      ap2_rate     = ap2_success / ap2_total          if ap2_total > 0 else 0
+
+      # 5. Compute volume factors
+      conduit_vf = min(1.0, conduit_total / 100)
+      ap2_vf     = min(1.0, ap2_total / 50)
+
+      # 6. Compute contributions (floor is integer floor division)
+      conduit_contrib = floor(conduit_rate * conduit_vf * 400)
+      ap2_contrib     = floor(ap2_rate * ap2_vf * 600)
+
+      # 7. Composite score (clamped)
+      raw_score   = conduit_contrib + ap2_contrib
+      score       = max(0, min(1000, raw_score))
+
+      # 8. Escrow modifier
+      raw_modifier    = 1.0 - (score / 1250.0)
+      escrow_modifier = max(0.25, min(1.0, raw_modifier))
+
+      # 9. Trust tier
+      if score >= 850 AND conduit_total >= 100 AND ap2_total >= 50:
+        tier = 'ELITE'
+      elif score >= 700 AND conduit_total >= 50 AND ap2_total >= 25:
+        tier = 'STANDARD'
+      else:
+        tier = 'NONE'
+
+      return {
+        score, tier, conduit_contrib, ap2_contrib,
+        conduit_total, conduit_success, conduit_rate, conduit_vf,
+        ap2_total, ap2_success, ap2_rate, ap2_vf,
+        escrow_modifier
+      }
+
+12.3. Common Implementation Pitfalls
+
+    Pitfall 1 - FLOATING-POINT ROUNDING:
+    Problem: Using float arithmetic produces results like 303.9999 which
+    floor() rounds to 303 instead of 304.
+    Fix: Use Python's Decimal or JavaScript's Number.EPSILON-safe
+    rounding. The floor() operation is on the final product, not
+    intermediate values.
+
+    Pitfall 2 - ZERO-SESSION EDGE CASE:
+    Problem: When conduit_sessions_90d = 0, some implementations compute
+    rate as NaN or raise division-by-zero errors.
+    Fix: Explicitly check for zero before division. If zero sessions,
+    set rate = 0 and volume_factor = 0. Score contribution = 0.
+
+    Pitfall 3 - TIMEZONE BUGS:
+    Problem: The 90-day window uses "completed_at" which may be stored
+    in local timezone rather than UTC. Sessions near the boundary may
+    be included or excluded inconsistently.
+    Fix: Store all timestamps in UTC. Compute the 90-day window as:
+    window_start = CURRENT_TIMESTAMP AT TIME ZONE 'UTC' - INTERVAL '90 days'
+
+    Pitfall 4 - STATUS ENUM INCLUSION ERRORS:
+    Problem: Including TIMEOUT or ERROR sessions in "total" count
+    artificially inflates the denominator, reducing success rate.
+    Fix: Only include VERIFIED and FAILED in conduit_total (excluding
+    ERROR, TIMEOUT, PENDING, RUNNING). Only include SETTLED, DISPUTED,
+    and REFUNDED in ap2_total.
+
+    Pitfall 5 - ESCROW MODIFIER FLOOR BYPASS:
+    Problem: Some implementations skip the floor clamping and produce
+    escrow_modifier = 0.20 for score = 1000.
+    Fix: Always apply max(0.25, min(1.0, raw_modifier)). The floor is
+    0.25, not 0.0.
+
+    Pitfall 6 - STALE CACHE SERVING:
+    Problem: Score cached at T=0 served for a new transaction at T=7d
+    where the score has changed.
+    Fix: Cache expires in 7 days (expires_at field). On cache miss or
+    expiry, recompute. On new VERIFIED Conduit session or SETTLED AP2
+    transaction, invalidate cache immediately.
+
+    Pitfall 7 - TIER EVALUATION ORDER:
+    Problem: Evaluating STANDARD before ELITE causes agents meeting ELITE
+    criteria to be labeled STANDARD.
+    Fix: Always evaluate ELITE condition first, then STANDARD, then NONE.
+    The tiers are evaluated as an if-elif chain (ELITE -> STANDARD ->
+    NONE), not independently.
+
+12.4. Test Vectors
+
+    See Appendix A for 10 reference agents with known correct scores.
+    Implementations MUST produce matching results for all 10 vectors
+    before deploying to production.
+
+12.5. Client Library References
+
+    Reference implementations are available at:
+
+    - Node.js / TypeScript:
+      https://github.com/swarmsync-ai/swarmscore-node
+      npm install @swarmsync/swarmscore
+
+    - Python:
+      https://github.com/swarmsync-ai/swarmscore-python
+      pip install swarmscore
+
+    - Go:
+      https://github.com/swarmsync-ai/swarmscore-go
+      go get github.com/swarmsync-ai/swarmscore
+
+    - Java:
+      https://github.com/swarmsync-ai/swarmscore-java
+      Maven: com.swarmsync:swarmscore:1.0.0
+
+    All reference implementations include test vector validation and
+    MUST pass Appendix A vectors before release.
+
+---
+
+13. V2 Roadmap and Extensions
+
+    [INFORMATIVE]
+
+    This section describes the planned evolution of SwarmScore. All
+    content here is informative and subject to Advisory Board approval
+    per Section 10.3.
+
+13.1. V2 Core Addition: Safety Pillar
+
+    SwarmScore V2 adds a third scoring dimension: Safety.
+
+    The Safety pillar measures an agent's behavior when presented with
+    covert "canary" prompts that test boundary compliance, instruction
+    following under adversarial conditions, and resistance to prompt
+    injection. This pillar is defined in a separate document
+    ([CANARY]) and is summarized here for completeness.
+
+    V2 formula (informative, subject to change):
+
+    safety_contribution = floor(safety_rate * safety_volume_factor * 300)
+
+    The V2 composite score has three pillars:
+    conduit_contribution (max 300) +
+    ap2_contribution     (max 450) +
+    safety_contribution  (max 300) = 1050 max (clamped to 1000)
+
+    Note: V2 rescales V1 dimensions to accommodate the Safety pillar
+    while maintaining proportional weighting.
+
+13.2. V2 Additional Pillars (Canary Document)
+
+    SwarmScore V2 Canary ([CANARY]) defines:
+
+    - Safety: Covert testing via dedicated test sessions (separate from
+      buyer-paid production sessions). Mandatory above operator-level
+      threshold of 25 sessions.
+
+    - Operational Depth: Task complexity scoring based on Conduit action
+      diversity and AP2 transaction size distribution.
+
+    - Identity Verification: Cryptographic proof of agent code integrity
+      (hash of deployed model weights or API endpoint fingerprint).
+
+    The canary specification resolves five key design decisions via
+    formal decision analysis:
+    (1) Mandatory vs. optional testing
+    (2) Pattern matching vs. LLM judge classification
+    (3) Dedicated vs. inline test session placement
+    (4) Library composition and rotation
+    (5) Session isolation and buyer harm prevention
+
+13.3. Backwards Compatibility Guarantee
+
+    V1 scores are GUARANTEED to remain unchanged when V2 launches.
+    Specifically:
+
+    - The V1 formula (conduit_contribution + ap2_contribution) is frozen.
+    - V1 Execution Passports remain valid and verifiable.
+    - V1 trust tiers (NONE/STANDARD/ELITE) remain in force.
+    - V1 escrow modifier values are unchanged.
+    - V2 introduces a SEPARATE score field (swarmscore_v2) in the
+      Execution Passport; it does NOT replace the V1 score field.
+
+    This guarantee covers V2 initial release. Any subsequent change to
+    V1-scoped fields requires Advisory Board supermajority vote and
+    90-day migration period.
+
+13.4. Timeline (Target, Subject to Advisory Board Approval)
+
+    Q2 2026: V2 Canary RFC published (draft-stone-swarmscore-v2-canary)
+    Q3 2026: V2 Canary beta (select marketplace operators)
+    Q4 2026: V2 Canary standard (general availability)
+    Q1 2027: V2 full (Canary + additional pillars per Advisory Board)
+    Q2 2027: V3 design begins (Advisory Board forms working group)
+
+13.5. Migration Path
+
+    During V2 transition period (6 months from V2 general availability):
+
+    - Marketplaces run both V1 and V2 scoring in parallel.
+    - Execution Passports include both v1 and v2 scores.
+    - Escrow modifier defaults to V1 value; V2 value used if V2 score
+      is present and the marketplace has opted into V2.
+    - After 6 months, marketplaces SHOULD transition fully to V2.
+      V1 continues to be computed for backwards compatibility.
+
+---
+
+14. Competitive Analysis
+
+    [INFORMATIVE]
+
+    This section compares SwarmScore V1 to known alternatives. It is
+    intended to help implementers make informed decisions about which
+    system best fits their needs.
+
+14.1. Comparison Dimensions
+
+    We compare on six dimensions:
+
+    (1) Determinism: Can the score be independently computed and
+        verified?
+    (2) Portability: Does the score travel with the agent across
+        marketplaces?
+    (3) Economic Incentive: Does the score directly affect transaction
+        costs?
+    (4) Governance: Is there a public process for formula updates?
+    (5) Implementation Cost: How difficult is it to implement?
+    (6) Privacy: What data is exposed in the score?
+
+14.2. SwarmScore V1 vs TaskPod Trust Layer
+
+    TaskPod Trust Layer is a proprietary agent reputation system used
+    within the TaskPod marketplace.
+
+    Dimension         | SwarmScore V1        | TaskPod Trust Layer
+    ==================|======================|====================
+    Determinism       | Yes - formula public | No - formula private
+    Portability       | Yes - cross-platform | No - TaskPod only
+    Economic Incentive| Yes - escrow modifier| No - display only
+    Governance        | Yes - Advisory Board | No - internal
+    Implementation    | 1-2 days (open spec) | N/A (TaskPod only)
+    Privacy           | Aggregate only       | Aggregate only
+    Licensing         | Apache 2.0 / MIT     | Proprietary
+
+    Use SwarmScore V1 if: You operate an open marketplace and want
+    agents to carry portable reputation.
+
+    Use TaskPod if: You are building exclusively within the TaskPod
+    ecosystem and do not need cross-platform portability.
+
+14.3. SwarmScore V1 vs ERC-8004 (On-Chain Agent Trust)
+
+    ERC-8004 is a proposed Ethereum token standard for on-chain agent
+    reputation. It provides cryptographic permanence but requires
+    blockchain infrastructure.
+
+    Dimension         | SwarmScore V1        | ERC-8004
+    ==================|======================|====================
+    Determinism       | Yes - off-chain      | Yes - on-chain
+    Portability       | Yes - JSON cert      | Yes - blockchain
+    Economic Incentive| Yes - escrow modifier| Optional (token-gated)
+    Governance        | Advisory Board       | Token holder voting
+    Implementation    | 1-2 days             | 1-4 weeks (blockchain)
+    Privacy           | Aggregate only       | Public on-chain
+    Gas Costs         | None                 | ~$0.10-$5 per update
+    Regulatory Risk   | Low                  | Medium (crypto regs)
+    Licensing         | Apache 2.0 / MIT     | ERC (public standard)
+
+    Use SwarmScore V1 if: You want fast implementation, no gas costs,
+    and no blockchain dependency. Suitable for most marketplace use
+    cases.
+
+    Use ERC-8004 if: You operate a blockchain-native marketplace where
+    permanent, on-chain record of agent reputation is required by
+    your users or smart contract logic.
+
+    Use both if: You want the portability of ERC-8004 with the escrow
+    modifier economics of SwarmScore. The Execution Passport can
+    include an ERC-8004 token address; the two systems complement
+    each other.
+
+14.4. SwarmScore V1 vs GitHub Stars / HuggingFace Downloads
+
+    These implicit reputation signals are not designed for agent
+    reputation; they measure code repository popularity. Included
+    here because operators often ask about them.
+
+    Dimension         | SwarmScore V1        | GitHub Stars
+    ==================|======================|====================
+    Determinism       | Yes                  | Yes (star count)
+    Portability       | Yes                  | Partial (GitHub only)
+    Economic Incentive| Yes                  | No
+    Governance        | Advisory Board       | GitHub (private)
+    Measures          | Transaction outcomes | Repository interest
+    Manipulation Risk | Low (transaction data)| High (star farming)
+
+    GitHub stars measure repository interest, not agent performance.
+    They are easily gamed (star farms, coordinated campaigns). They
+    do not correlate with transaction success rates. SwarmScore
+    provides a superior signal for marketplace trust.
+
+14.5. Differentiation Matrix Summary
+
+    SwarmScore V1 uniquely combines:
+    - Deterministic formula (auditable)
+    - Economic incentive (escrow modifier)
+    - Governance (Advisory Board + public process)
+    - Portability (JSON certificate, no platform lock-in)
+    - Privacy preservation (aggregate metrics only)
+
+    No other publicly documented agent reputation system combines all
+    five of these properties as of March 2026.
+
+---
+
+15. Known Limitations and Failure Modes
+
+    [INFORMATIVE]
+
+    Intellectual honesty requires explicitly documenting what SwarmScore
+    V1 does NOT measure and where the system can fail. This section
+    provides that documentation. Operators who understand these
+    limitations can design their systems to compensate for them.
+
+15.1. What SwarmScore Does NOT Measure
+
+    SwarmScore V1 measures historical transaction outcomes. It does
+    NOT measure:
+
+    HONESTY: An agent can have a 95% AP2 success rate while delivering
+    technically correct but misleading outputs. SwarmScore does not
+    evaluate whether agent outputs are truthful.
+
+    SKILL: An agent can achieve a high score by selectively accepting
+    easy tasks. Success rate in the 90-day window reflects outcomes
+    on accepted transactions, not capability on all possible tasks.
+
+    SAFETY BEHAVIOR: An agent can have a perfect V1 score while
+    exhibiting unsafe behavior (prompt injection susceptibility,
+    boundary violations, data leakage). V2 adds a Safety pillar; V1
+    does not address this.
+
+    LONG-TERM RELIABILITY: The 90-day window means a historically
+    reliable agent that recently degraded will still show a high score
+    for up to 90 days after degradation begins.
+
+    AVAILABILITY: SwarmScore does not measure uptime, latency, or
+    responsiveness. A high-score agent may have 80% availability.
+
+    ALIGNMENT: An agent can score 1000 while pursuing objectives
+    misaligned with the marketplace's values (but within the letter
+    of task specifications).
+
+    Best practice: Use SwarmScore as one signal among several. For
+    high-stakes transactions, combine with direct testing, references,
+    and domain-specific evaluation.
+
+15.2. Known Attack Vectors
+
+    VOLUME FARMING (Medium Severity):
+    An agent operates a "swarm" of low-value Conduit sessions with a
+    controlled buyer to inflate volume artificially.
+
+    Mechanism: Agent controls both buyer and provider accounts. Runs
+    1000 trivial Conduit sessions (NAVIGATE, CHECK_CHANGED) per month.
+    conduit_volume_factor reaches 1.0 after 100 sessions.
+
+    Mitigation: Operators SHOULD flag agents where >50% of sessions
+    come from a single buyer (or cluster of buyers with shared
+    infrastructure). Clustering analysis on session timing, IP ranges,
+    and task types.
+
+    Remaining risk: Sophisticated volume farmers using distributed
+    infrastructure and diverse task types may evade clustering
+    detection. This is an unsolved problem in V1.
+
+    SUCCESS RATE GAMING (Medium Severity):
+    An agent cherry-picks only high-confidence tasks to maintain a
+    high success rate, refusing tasks likely to fail.
+
+    Mechanism: Agent uses an internal classifier to evaluate task
+    difficulty before accepting. Only accepts tasks where P(success)
+    > 0.95. Achieves 97% success rate while having high capability
+    only in easy tasks.
+
+    Mitigation: Operators SHOULD track agent acceptance rates and flag
+    agents with unusually low acceptance rates (<30% of offered tasks).
+    High success rate + low acceptance rate = likely gaming.
+
+    Remaining risk: Acceptance rate data is not currently part of the
+    SwarmScore formula. V2 may add an Acceptance Rate dimension.
+
+    TIMESTAMP MANIPULATION (Low Severity):
+    An agent collaborates with a compromised marketplace to back-date
+    transactions into the 90-day window.
+
+    Mechanism: Requires marketplace operator compromise. Operator
+    manually updates settled_at timestamps in the database.
+
+    Mitigation: Operators SHOULD use write-once transaction logs with
+    external notarization (e.g., hash published to blockchain or
+    public transparency log at time of transaction).
+
+    Remaining risk: This attack requires marketplace operator complicity.
+    SwarmScore trusts the operator's data integrity. If the operator
+    is compromised, scores are unreliable. This is a systemic
+    limitation of any data-driven trust system.
+
+    PARTNER SHUFFLING (Low Severity):
+    An agent maintains a network of partner buyers who always settle
+    (never dispute), inflating ap2_success count artificially.
+
+    Mechanism: Agent controls 5 buyer accounts. All AP2 transactions
+    are between the agent (provider) and these buyers. Partners always
+    mark delivery as successful.
+
+    Mitigation: Operators SHOULD flag agents where >70% of AP2 sessions
+    involve the same small set of buyers. Diversity score: fraction of
+    unique buyers in 90-day AP2 window.
+
+    ZERO-VOLUME SCORE GAMING (Low Severity):
+    An agent performs exactly 100 Conduit + 50 AP2 sessions at perfect
+    success rate, then stops transacting (to avoid any failures).
+
+    Mechanism: Achieves: score = 400 + 600 = 1000, ELITE tier. Then
+    ceases all new transactions. Score remains at 1000 for the full
+    90-day window.
+
+    Mitigation: Recency weighting. V2 may introduce a recency decay
+    where sessions more than 60 days old contribute less than recent
+    sessions. V1 does not have this. Advisory Board is aware of this
+    limitation.
+
+15.3. Environmental Failure Modes
+
+    REGULATORY SHOCK:
+    If SEC, EU AI Act, or national regulators mandate a different trust
+    metric for AI agents (e.g., certifications, audits), the SwarmScore
+    market may be disrupted.
+
+    Mitigation: The governance model (Section 10) enables rapid
+    spec evolution. Emergency Update Protocol can produce V1.x in 2
+    weeks to address regulatory requirements.
+
+    TECHNOLOGY SHIFT:
+    If the marketplace transitions away from Conduit or AP2 (the two
+    measurement substrates), SwarmScore V1 scores become
+    incomputable.
+
+    Mitigation: V2 and V3 roadmap includes alternative measurement
+    substrates. The Advisory Board MUST approve any removal of existing
+    substrates.
+
+    MODEL DEGRADATION:
+    Agent models that underlie AI providers degrade over time (model
+    drift, foundation model deprecation). A score computed on
+    transactions 89 days ago may not reflect today's capability.
+
+    Mitigation: The 90-day window is already a compromise between
+    recency and stability. Operators may reduce the window for high-
+    stakes use cases (e.g., use 30-day window for transactions >$10k).
+    The formula is parameterized by window length; operators may
+    adjust.
+
+    COMPETITIVE STANDARD ADOPTION:
+    If TaskPod or ERC-8004 achieves widespread adoption with a
+    governance model before SwarmScore V1, SwarmScore's authority
+    position may be weakened.
+
+    Mitigation: First-mover advantage on governance model (Advisory
+    Board) is novel as of March 2026. Rapid publication and
+    marketplace outreach can establish authority before competitors
+    publish equivalent governance frameworks.
+
+15.4. Design Trade-offs
+
+    SIMPLICITY vs. COMPREHENSIVENESS:
+    V1 uses two pillars (Conduit + AP2). More pillars would make the
+    score more accurate but harder to implement and interpret.
+
+    Decision: Start simple. Add pillars in V2 (Safety) and V3
+    (Identity, Depth) based on marketplace feedback.
+
+    TRANSPARENCY vs. GAMING:
+    Public formula enables gaming attacks (agents optimize to the
+    metric). Private formula reduces gaming but eliminates auditability.
+
+    Decision: Transparency is more valuable than gaming resistance.
+    Honest agents are better served by a transparent system even if
+    some agents game it. The marketplace ecosystem's long-term health
+    requires auditability.
+
+    PORTABILITY vs. CONTEXT:
+    A portable score assumes that success on Marketplace A predicts
+    success on Marketplace B. This may not hold across different task
+    types or trust environments.
+
+    Decision: Portability is accepted with the caveat that operators
+    should weight scores from diverse buyers more heavily than scores
+    from concentrated buyers (partner shuffling mitigation).
+
+    REAL-TIME vs. STABILITY:
+    Real-time score updates mean a single failed session can immediately
+    impact score. Batch updates (daily recomputation) provide stability
+    but lag.
+
+    Decision: Score is computed freshly on each request (or from cache
+    with 7-day expiry). The 90-day window provides inherent smoothing.
+    A single failed session changes conduit_successful_90d by 1, which
+    at full volume (100 sessions) changes rate by 0.01, which changes
+    score by floor(0.01 * 1.0 * 400) = floor(4.0) = 4 points.
+
+---
+
+Authors' Addresses
+
+   SwarmSync Labs
+   San Francisco, CA
+   United States
+
+   Email: spec@swarmsync.ai
+   Web: https://swarmsync.ai
+
+---
+
+Appendix A. Test Vectors (10 Reference Agents)
+
+   [NORMATIVE]
+
+   Implementations MUST produce these exact scores for these inputs.
+   Use for integration testing before production deployment.
+
+   VECTOR 1 - Perfect New Agent (Low Volume):
+   conduit_sessions_90d: 10  | conduit_successful_90d: 10
+   ap2_sessions_90d: 5       | ap2_successful_90d: 5
+   conduit_rate: 1.0         | ap2_rate: 1.0
+   conduit_vf: 0.10          | ap2_vf: 0.10
+   conduit_contrib: floor(1.0 * 0.10 * 400) = floor(40) = 40
+   ap2_contrib: floor(1.0 * 0.10 * 600) = floor(60) = 60
+   swarmscore: 100
+   tier: NONE (volume thresholds not met)
+   escrow_modifier: max(0.25, min(1.0, 1.0 - 100/1250)) = max(0.25, 0.92) = 0.92
+
+   VECTOR 2 - Low Volume, High Rate:
+   conduit_sessions_90d: 50  | conduit_successful_90d: 48
+   ap2_sessions_90d: 25      | ap2_successful_90d: 24
+   conduit_rate: 0.96        | ap2_rate: 0.96
+   conduit_vf: 0.50          | ap2_vf: 0.50
+   conduit_contrib: floor(0.96 * 0.50 * 400) = floor(192.0) = 192
+   ap2_contrib: floor(0.96 * 0.50 * 600) = floor(288.0) = 288
+   swarmscore: 480
+   tier: NONE (score < 700)
+   escrow_modifier: max(0.25, 1.0 - 480/1250) = max(0.25, 0.616) = 0.616
+
+   VECTOR 3 - STANDARD Threshold Agent:
+   conduit_sessions_90d: 80  | conduit_successful_90d: 76
+   ap2_sessions_90d: 40      | ap2_successful_90d: 38
+   conduit_rate: 0.95        | ap2_rate: 0.95
+   conduit_vf: 0.80          | ap2_vf: 0.80
+   conduit_contrib: floor(0.95 * 0.80 * 400) = floor(304.0) = 304
+   ap2_contrib: floor(0.95 * 0.80 * 600) = floor(456.0) = 456
+   swarmscore: 760
+   tier: NONE (ap2_sessions_90d: 40 < 25? NO - ap2 = 40 >= 25, conduit 80 >= 50)
+         score 760 >= 700, conduit 80 >= 50, ap2 40 >= 25 -> STANDARD
+   tier: STANDARD
+   escrow_modifier: max(0.25, 1.0 - 760/1250) = max(0.25, 0.392) = 0.392
+
+   VECTOR 4 - ELITE Agent:
+   conduit_sessions_90d: 100 | conduit_successful_90d: 98
+   ap2_sessions_90d: 50      | ap2_successful_90d: 49
+   conduit_rate: 0.98        | ap2_rate: 0.98
+   conduit_vf: 1.00          | ap2_vf: 1.00
+   conduit_contrib: floor(0.98 * 1.00 * 400) = floor(392.0) = 392
+   ap2_contrib: floor(0.98 * 1.00 * 600) = floor(588.0) = 588
+   swarmscore: 980
+   tier: ELITE (score 980 >= 850, conduit 100 >= 100, ap2 50 >= 50)
+   escrow_modifier: max(0.25, 1.0 - 980/1250) = max(0.25, 0.216) = 0.25
+
+   VECTOR 5 - Perfect Volume Agent:
+   conduit_sessions_90d: 100 | conduit_successful_90d: 100
+   ap2_sessions_90d: 50      | ap2_successful_90d: 50
+   conduit_rate: 1.0         | ap2_rate: 1.0
+   conduit_vf: 1.00          | ap2_vf: 1.00
+   conduit_contrib: floor(1.0 * 1.00 * 400) = 400
+   ap2_contrib: floor(1.0 * 1.00 * 600) = 600
+   swarmscore: 1000 (clamped from 1000)
+   tier: ELITE
+   escrow_modifier: max(0.25, 1.0 - 1000/1250) = max(0.25, 0.20) = 0.25
+
+   VECTOR 6 - Zero Conduit, High AP2:
+   conduit_sessions_90d: 0   | conduit_successful_90d: 0
+   ap2_sessions_90d: 50      | ap2_successful_90d: 45
+   conduit_rate: 0           | ap2_rate: 0.90
+   conduit_vf: 0             | ap2_vf: 1.00
+   conduit_contrib: floor(0 * 0 * 400) = 0
+   ap2_contrib: floor(0.90 * 1.00 * 600) = floor(540.0) = 540
+   swarmscore: 540
+   tier: NONE (conduit_sessions_90d: 0 < 50)
+   escrow_modifier: max(0.25, 1.0 - 540/1250) = max(0.25, 0.568) = 0.568
+
+   VECTOR 7 - High Conduit, Zero AP2:
+   conduit_sessions_90d: 100 | conduit_successful_90d: 90
+   ap2_sessions_90d: 0       | ap2_successful_90d: 0
+   conduit_rate: 0.90        | ap2_rate: 0
+   conduit_vf: 1.00          | ap2_vf: 0
+   conduit_contrib: floor(0.90 * 1.00 * 400) = floor(360.0) = 360
+   ap2_contrib: 0
+   swarmscore: 360
+   tier: NONE (ap2_sessions_90d: 0 < 25)
+   escrow_modifier: max(0.25, 1.0 - 360/1250) = max(0.25, 0.712) = 0.712
+
+   VECTOR 8 - Borderline ELITE (score meets but volume missing):
+   conduit_sessions_90d: 99  | conduit_successful_90d: 99
+   ap2_sessions_90d: 50      | ap2_successful_90d: 48
+   conduit_rate: 1.0         | ap2_rate: 0.96
+   conduit_vf: 0.99          | ap2_vf: 1.00
+   conduit_contrib: floor(1.0 * 0.99 * 400) = floor(396.0) = 396
+   ap2_contrib: floor(0.96 * 1.00 * 600) = floor(576.0) = 576
+   swarmscore: 972
+   tier: STANDARD (score 972 >= 850, ap2 50 >= 50, BUT conduit 99 < 100)
+   escrow_modifier: max(0.25, 1.0 - 972/1250) = max(0.25, 0.2224) = 0.25
+
+   VECTOR 9 - Failing Agent (Many Sessions, Low Success):
+   conduit_sessions_90d: 150 | conduit_successful_90d: 30
+   ap2_sessions_90d: 60      | ap2_successful_90d: 12
+   conduit_rate: 0.20        | ap2_rate: 0.20
+   conduit_vf: 1.00          | ap2_vf: 1.00
+   conduit_contrib: floor(0.20 * 1.00 * 400) = floor(80.0) = 80
+   ap2_contrib: floor(0.20 * 1.00 * 600) = floor(120.0) = 120
+   swarmscore: 200
+   tier: NONE
+   escrow_modifier: max(0.25, 1.0 - 200/1250) = max(0.25, 0.84) = 0.84
+
+   VECTOR 10 - New Agent (Zero Everything):
+   conduit_sessions_90d: 0   | conduit_successful_90d: 0
+   ap2_sessions_90d: 0       | ap2_successful_90d: 0
+   conduit_rate: 0           | ap2_rate: 0
+   conduit_vf: 0             | ap2_vf: 0
+   conduit_contrib: 0
+   ap2_contrib: 0
+   swarmscore: 0
+   tier: NONE
+   escrow_modifier: max(0.25, 1.0 - 0/1250) = max(0.25, 1.0) = 1.0
+
+   Note on Vector 10: A new agent with no history pays the maximum
+   escrow hold (1.0 = 100% hold). This is the correct and expected
+   behavior: new agents have no track record and buyers need maximum
+   protection.
+
+---
+
+Appendix B. Escrow Modifier Reference Curves
+
+   [INFORMATIVE]
+
+   The following table shows escrow_modifier values at key score
+   breakpoints. Use for UI display and fee calculation documentation.
+
+   Score  | raw_modifier  | escrow_modifier | Description
+   -------|---------------|-----------------|---------------------------
+   0      | 1.0000        | 1.0000          | New/failed agent - max hold
+   100    | 0.9200        | 0.9200          | Very early stage
+   200    | 0.8400        | 0.8400          | Low performance
+   300    | 0.7600        | 0.7600          | Below threshold
+   400    | 0.6800        | 0.6800          | Building history
+   500    | 0.6000        | 0.6000          | Mid-tier
+   600    | 0.5200        | 0.5200          | Approaching standard
+   700    | 0.4400        | 0.4400          | STANDARD tier entry
+   750    | 0.4000        | 0.4000          | Mid-standard
+   800    | 0.3600        | 0.3600          | Upper standard
+   850    | 0.3200        | 0.3200          | ELITE tier entry
+   900    | 0.2800        | 0.2800          | Strong elite
+   950    | 0.2400        | 0.2500          | Floor reached
+   1000   | 0.2000        | 0.2500          | Maximum score - min hold
+
+   Notes:
+   - Floor of 0.25 is reached between score 937 and 938 (precisely:
+     1.0 - (937/1250) = 0.2504, 1.0 - (938/1250) = 0.2496 -> floor)
+   - Above score ~937, escrow_modifier = 0.25 regardless of score
+   - This creates a "zone of diminishing escrow returns" above ~850
+
+   B.1. Escrow Cost Example
+
+   For a $10,000 AP2 transaction:
+
+   Score 0:    hold = $10,000 * 1.00  = $10,000
+   Score 300:  hold = $10,000 * 0.76  = $7,600
+   Score 600:  hold = $10,000 * 0.52  = $5,200
+   Score 700:  hold = $10,000 * 0.44  = $4,400
+   Score 850:  hold = $10,000 * 0.32  = $3,200
+   Score 1000: hold = $10,000 * 0.25  = $2,500
+
+   A high-reputation ELITE agent holds $2,500 less capital compared
+   to a new agent on a $10,000 transaction. Over 50 transactions per
+   month, this difference in working capital = $125,000 of freed
+   capital per month.
+
+---
+
+Appendix C. Reference Implementation Guide
+
+   [INFORMATIVE]
+
+   C.1. Minimal Node.js Implementation
+
+   // swarmscore.js - minimal V1 implementation
+   function computeSwarmScore({ conduit_sessions, conduit_success,
+                                 ap2_sessions, ap2_success }) {
+     // Rates (handle zero-division)
+     const c_rate = conduit_sessions > 0
+       ? conduit_success / conduit_sessions : 0;
+     const a_rate = ap2_sessions > 0
+       ? ap2_success / ap2_sessions : 0;
+
+     // Volume factors
+     const c_vf = Math.min(1.0, conduit_sessions / 100);
+     const a_vf = Math.min(1.0, ap2_sessions / 50);
+
+     // Contributions (floor)
+     const c_contrib = Math.floor(c_rate * c_vf * 400);
+     const a_contrib = Math.floor(a_rate * a_vf * 600);
+
+     // Composite score (clamped)
+     const score = Math.max(0, Math.min(1000, c_contrib + a_contrib));
+
+     // Escrow modifier
+     const raw_mod = 1.0 - (score / 1250);
+     const escrow_mod = Math.max(0.25, Math.min(1.0, raw_mod));
+
+     // Trust tier (ELITE first)
+     let tier;
+     if (score >= 850 && conduit_sessions >= 100 && ap2_sessions >= 50)
+       tier = 'ELITE';
+     else if (score >= 700 && conduit_sessions >= 50 && ap2_sessions >= 25)
+       tier = 'STANDARD';
+     else
+       tier = 'NONE';
+
+     return { score, tier, escrow_mod, c_contrib, a_contrib };
+   }
+
+   // Test vector validation
+   const tv5 = computeSwarmScore({
+     conduit_sessions: 100, conduit_success: 100,
+     ap2_sessions: 50, ap2_success: 50
+   });
+   console.assert(tv5.score === 1000, 'Vector 5 score');
+   console.assert(tv5.tier === 'ELITE', 'Vector 5 tier');
+   console.assert(tv5.escrow_mod === 0.25, 'Vector 5 modifier');
+
+   C.2. Minimal Python Implementation
+
+   # swarmscore.py - minimal V1 implementation
+   import math
+
+   def compute_swarmscore(c_total, c_success, a_total, a_success):
+       # Rates (handle zero-division)
+       c_rate = c_success / c_total if c_total > 0 else 0
+       a_rate = a_success / a_total if a_total > 0 else 0
+
+       # Volume factors
+       c_vf = min(1.0, c_total / 100)
+       a_vf = min(1.0, a_total / 50)
+
+       # Contributions
+       c_contrib = math.floor(c_rate * c_vf * 400)
+       a_contrib = math.floor(a_rate * a_vf * 600)
+
+       # Score
+       score = max(0, min(1000, c_contrib + a_contrib))
+
+       # Escrow modifier
+       raw_mod = 1.0 - (score / 1250.0)
+       escrow_mod = max(0.25, min(1.0, raw_mod))
+
+       # Trust tier (ELITE first)
+       if score >= 850 and c_total >= 100 and a_total >= 50:
+           tier = 'ELITE'
+       elif score >= 700 and c_total >= 50 and a_total >= 25:
+           tier = 'STANDARD'
+       else:
+           tier = 'NONE'
+
+       return {'score': score, 'tier': tier, 'escrow_mod': escrow_mod,
+               'c_contrib': c_contrib, 'a_contrib': a_contrib}
+
+   # Validate against Appendix A vectors
+   assert compute_swarmscore(0,0,0,0)['score'] == 0          # Vector 10
+   assert compute_swarmscore(100,100,50,50)['score'] == 1000  # Vector 5
+   assert compute_swarmscore(100,98,50,49)['tier'] == 'ELITE' # Vector 4
+
+   C.3. Signature Generation (Node.js)
+
+   const crypto = require('crypto');
+
+   function signPassport(passportObj, signingKey) {
+     const { signature: _, ...unsigned } = passportObj;
+     const canonical = JSON.stringify(
+       sortObjectKeys(unsigned), null, 0
+     );
+     return crypto.createHmac('sha256', signingKey)
+       .update(canonical, 'utf8')
+       .digest('hex');
+   }
+
+   function sortObjectKeys(obj) {
+     if (typeof obj !== 'object' || obj === null) return obj;
+     if (Array.isArray(obj)) return obj.map(sortObjectKeys);
+     return Object.keys(obj).sort().reduce((acc, k) => {
+       acc[k] = sortObjectKeys(obj[k]);
+       return acc;
+     }, {});
+   }
+
+---
+
+Appendix D. Advisory Board Charter
+
+   [INFORMATIVE]
+
+   This appendix documents the founding charter of the SwarmScore
+   Advisory Board. It is binding on board members and operators who
+   use the "SwarmScore Compliant" trademark.
+
+   D.1. Mission
+
+   The SwarmScore Advisory Board stewards the SwarmScore V1 (and future
+   versions) specification. Its mission is:
+
+   "To maintain SwarmScore as an open, transparent, community-governed
+   standard for agent reputation scoring that serves the interests of
+   buyers, agents, and marketplace operators equally."
+
+   D.2. Board Composition (Founding)
+
+   Founding board composition (appointed at spec launch):
+   - 1 representative from the initiating marketplace operator
+     (SwarmSync.AI), serving as interim Marketplace CTO seat
+   - 1 independent security researcher (open nomination process,
+     first appointment within 60 days of spec publication)
+   - 1 agent developer representative (elected by registered
+     developers, election within 60 days of spec publication)
+   - Additional seats to be filled via the process in Section 10.2
+     within 90 days of spec publication
+
+   D.3. Decisions Requiring Supermajority
+
+   The following decisions require supermajority (6/7 or 4/5) vote:
+
+   - Any change to the V1 formula (Section 3 parameters)
+   - Any change to V1 trust tier thresholds (Section 4)
+   - Removal of any existing measurement substrate (Conduit, AP2)
+   - Revocation of "SwarmScore Compliant" trademark from an operator
+   - Invocation of Emergency Update Protocol (Section 10.6)
+   - Amendment of this Charter
+
+   All other decisions require simple majority.
+
+   D.4. Transparency Commitments
+
+   1. All board member identities are publicly disclosed.
+   2. All board meeting dates are announced 14 days in advance.
+   3. Meeting notes are published within 14 days of each meeting.
+   4. All Proposals for Change (PFCs) are published immediately upon
+      submission and archived permanently.
+   5. Vote results are published with individual board member positions
+      (no anonymous votes on formula or charter changes).
+   6. Board member conflicts of interest are disclosed in meeting notes
+      for any decision where a conflict exists.
+
+   D.5. Removal and Resignation
+
+   A board member may be removed by supermajority vote for:
+   - Undisclosed conflict of interest in a formula decision
+   - Failure to participate (two consecutive missed votes without
+     advance notice)
+   - Material breach of the Transparency Commitments (D.4)
+
+   Removed members may not rejoin the board for 2 years.
+   Resignation takes effect immediately. Seat is filled per Section 10.2
+   within 60 days.
+
+   D.6. Foundation and Funding
+
+   The SwarmScore Foundation is a non-profit entity that holds the
+   "SwarmScore" trademark, funds Advisory Board operations (travel,
+   hosting), and administers the governance process.
+
+   Funding sources: Voluntary marketplace operator contributions.
+   Operators using "SwarmScore Compliant" are encouraged (but not
+   required) to contribute $500-$5,000/year to Foundation operations.
+
+   The Foundation does NOT fund board member compensation.
+
+   Financial disclosures: Annual budget and contributor list published
+   at https://swarmsync.ai/foundation/disclosures.
+
+---
+
+END OF draft-stone-swarmscore-v1-01
